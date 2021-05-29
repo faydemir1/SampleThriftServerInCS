@@ -1,4 +1,4 @@
-﻿/* 
+/* 
  *  Author: Fikri Aydemir
  *  Date  :	10/04/2020 15:14
  *  
@@ -17,6 +17,8 @@ using System;
 using System.IO;
 using System.Threading;
 using Thrift;
+using Thrift.Processor;
+using Thrift.Protocol;
 using Thrift.Server;
 using Thrift.Transport;
 using Thrift.Transport.Server;
@@ -24,12 +26,13 @@ using Thrift.Transport.Server;
 namespace Server.APIGateway.Thrift
 {
     /// <summary>
-    /// Class providing the execution logic of Grpc Server
+    /// Class providing the execution logic of Thrift Server
     /// </summary> 
     public class Startup
     {
         private const string STR_ThriftServerDefaultPort = "ThriftServerDefaultPort";
         private const string STR_AppName = "ThriftServer";
+        private const string STR_QuitText = "Press q to stop the server...";
 
         /// <summary>
         /// Public Ctor
@@ -53,11 +56,30 @@ namespace Server.APIGateway.Thrift
                 ThriftGatewayServerImpl serverHandler = new ThriftGatewayServerImpl();
                 var processor = new ThriftAPIGatewayService.AsyncProcessor(serverHandler);
 
-                //Setup the I/O stack factories
-                var config = new TConfiguration();
-                TServerTransport serverTransport = new TServerSocketTransport(serverPort, config);               
-                TServer serverEngine = new TThreadPoolAsyncServer(processor, serverTransport);                
-                serverEngine.ServeAsync(CancellationToken.None).Wait();
+                var protocolFactory = new TBinaryProtocol.Factory();
+                var thriftConfiguration = new TConfiguration();
+                var serverTransport = new TServerSocketTransport(serverPort, thriftConfiguration);
+                var transportFactory = new TBufferedTransport.Factory();
+                var threadConfiguration = new TThreadPoolAsyncServer.Configuration();
+                var loggerFactory = new SerilogLoggerFactory(Log.Logger);
+
+                var server = new TThreadPoolAsyncServer(
+                    processorFactory: new TSingletonProcessorFactory(processor),
+                    serverTransport: serverTransport,
+                    inputTransportFactory: transportFactory,
+                    outputTransportFactory: transportFactory,
+                    inputProtocolFactory: protocolFactory,
+                    outputProtocolFactory: protocolFactory,
+                    threadConfig: threadConfiguration,
+                    loggerFactory.CreateLogger<Startup>());
+
+                Log.Information("Starting {0} at port {1}", STR_AppName, serverPort);
+                Log.Information(STR_QuitText);
+
+                var source = new CancellationTokenSource();
+                server.ServeAsync(CancellationToken.None).GetAwaiter().GetResult();
+                Console.ReadLine();
+                source.Cancel();
 
             }
             catch (Exception ex)
